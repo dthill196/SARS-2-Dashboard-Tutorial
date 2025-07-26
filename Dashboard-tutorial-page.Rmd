@@ -27,7 +27,7 @@ This tutorial provides the source code for the New York State Wastewater Surveil
 
 #### Please reference the following paper when using this resource: 
 
-Hill, D.T., Dunham, C., Larsen, D.A., and Collins, M.B. (2023). Operationalizing an open-source dashboard for communicating results of wastewater-based epidemiology. EarthArXiv. [https://doi.org/10.31223/X57H3W](https://doi.org/10.31223/X57H3W)
+Hill D, Dunham C, Larsen DA, Collins M. Operationalizing an open-source dashboard for communicating results of wastewater-based surveillance. MethodsX. 2023 Dec 1;11:102299. [https://doi.org/10.1016/j.mex.2023.102299](https://doi.org/10.1016/j.mex.2023.102299)
 
 ### Outline
 
