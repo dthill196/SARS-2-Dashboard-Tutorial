@@ -11,7 +11,7 @@
 
 <meta name="author" content="Dustin T. Hill, Chris Dunham, David A. Larsen, and Mary B. Collins" />
 
-<meta name="date" content="2022-12-28" />
+<meta name="date" content="2023-03-06" />
 
 <title>Wastewater Surveillance Dashboard Tutorial Using R and R Shiny</title>
 
@@ -171,7 +171,7 @@ pre code {
 
 <h1 class="title toc-ignore">Wastewater Surveillance Dashboard Tutorial Using R and R Shiny</h1>
 <h4 class="author">Dustin T. Hill, Chris Dunham, David A. Larsen, and Mary B. Collins</h4>
-<h4 class="date">2022-12-28</h4>
+<h4 class="date">2023-03-06</h4>
 
 </div>
 
@@ -180,7 +180,16 @@ pre code {
 <h1 class="tabset">Guide</h1>
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
+<div id="overview" class="section level3">
+<h3>Overview</h3>
 <p>This tutorial provides the source code for the New York State Wastewater Surveillance Network’s <a href="https://mbcolli.shinyapps.io/SARS2EWSP/#">SARS-CoV-2 data dashboard</a>. The tutorial goes through the major code chunks for processing the wastewater data, case data, and spatial data used in the R shiny application. Further, the tutorial discusses some of the techniques used to provide automatic data updates to the dashboard, how each figure was created, and how interactivity was coded into the dashboard. Portions of the source code are provided in this document. The source code is also available in an unabridged version at this GitHub page (insert link maybe). This tutorial represents the state of the dashboard on the date of publication and may not reflect the most up-to-date version of the code or dashboard. For the most up-to-date version, the authors direct you to the Git Hub page referenced above.</p>
+<div id="please-reference-the-following-paper-when-using-this-resource" class="section level4">
+<h4>Please reference the following paper when using this resource:</h4>
+<p>Hill, D.T., Dunham, C., Larsen, D.A., and Collins, M.B. (2023). Operationalizing an open-source dashboard for communicating results of wastewater-based epidemiology. EarthArXiv. <a href="https://doi.org/10.31223/X57H3W">https://doi.org/10.31223/X57H3W</a></p>
+</div>
+</div>
+<div id="outline" class="section level3">
+<h3>Outline</h3>
 <p>This tutorial has been divided into the following major sections:</p>
 <ol style="list-style-type: decimal">
 <li><p>Data and preprocessing - explanation of all data sources and storage methods, data manipulation and calculations.</p></li>
@@ -190,6 +199,7 @@ pre code {
 <li><p>Interactivity between Leaflet and plots - a section with code and examples one how the interactivity was coded for between the map and trend plots</p></li>
 <li><p>References and Resources - a list of references and useful resources that guided the creation of our dashboard.</p></li>
 </ol>
+</div>
 <div id="r-packages" class="section level3">
 <h3>R packages</h3>
 <p>To run the shiny app, the packages listed in Table 1 need to be installed and loaded. The shiny, shiny dashboard, and shiny dashboard plus packages are all required for creating the layout and basic interactive features. The data processing packages like dplyr and tidyr are necessary for data preprocessing when the app launches and the Leaflet packages</p>
