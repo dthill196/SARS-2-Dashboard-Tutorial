@@ -23,7 +23,7 @@ knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80), tidy=TRUE)
 
 ### Overview
 
-This tutorial provides the source code for the New York State Wastewater Surveillance Network's  [SARS-CoV-2 data dashboard](https://mbcolli.shinyapps.io/SARS2EWSP/#). The tutorial goes through the major code chunks for processing the wastewater data, case data, and spatial data used in the R shiny application. Further, the tutorial discusses some of the techniques used to provide automatic data updates to the dashboard, how each figure was created, and how interactivity was coded into the dashboard. Portions of the source code are provided in this document. This tutorial represents the state of the dashboard on the date of publication and may not reflect the most up-to-date version of the code or dashboard.
+This tutorial provides the source code for the New York State Wastewater Surveillance Network's SARS-CoV-2 data dashboard that was retired in 2024. You can now view a test dashboard built for this tutorial at [this link](https://nywastewatcher.shinyapps.io/wbe-dashboard-example/). The tutorial goes through the major code chunks for processing the wastewater data, case data, and spatial data used in the R shiny application. Further, the tutorial discusses some of the techniques used to provide automatic data updates to the dashboard, how each figure was created, and how interactivity was coded into the dashboard. Portions of the source code are provided in this document. This tutorial represents the state of the dashboard on the date of publication and may not reflect the most up-to-date version of the code or dashboard.
 
 #### Please reference the following paper when using this resource: 
 
