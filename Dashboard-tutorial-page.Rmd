@@ -21,7 +21,15 @@ knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80), tidy=TRUE)
 
 ## Introduction
 
-This tutorial provides the source code for the New York State Wastewater Surveillance Network's  [SARS-CoV-2 data dashboard](https://mbcolli.shinyapps.io/SARS2EWSP/#). The tutorial goes through the major code chunks for processing the wastewater data, case data, and spatial data used in the R shiny application. Further, the tutorial discusses some of the techniques used to provide automatic data updates to the dashboard, how each figure was created, and how interactivity was coded into the dashboard. Portions of the source code are provided in this document. The source code is also available in an unabridged version at this GitHub page (insert link maybe). This tutorial represents the state of the dashboard on the date of publication and may not reflect the most up-to-date version of the code or dashboard. For the most up-to-date version, the authors direct you to the Git Hub page referenced above. 
+### Overview
+
+This tutorial provides the source code for the New York State Wastewater Surveillance Network's  [SARS-CoV-2 data dashboard](https://mbcolli.shinyapps.io/SARS2EWSP/#). The tutorial goes through the major code chunks for processing the wastewater data, case data, and spatial data used in the R shiny application. Further, the tutorial discusses some of the techniques used to provide automatic data updates to the dashboard, how each figure was created, and how interactivity was coded into the dashboard. Portions of the source code are provided in this document. This tutorial represents the state of the dashboard on the date of publication and may not reflect the most up-to-date version of the code or dashboard.
+
+#### Please reference the following paper when using this resource: 
+
+Hill, D.T., Dunham, C., Larsen, D.A., and Collins, M.B. (2023). Operationalizing an open-source dashboard for communicating results of wastewater-based epidemiology. EarthArXiv. [https://doi.org/10.31223/X57H3W](https://doi.org/10.31223/X57H3W)
+
+### Outline
 
 This tutorial has been divided into the following major sections: 
 
@@ -818,7 +826,284 @@ Clicking on the Leaflet map is linked to other Shiny operations including updati
   })
 ```
 
-### Closing thoughts
+## Adding additional pathogens
+
+The original dashboard for the NY Wastewater Surveillance Network was designed for SARS-CoV-2. With programs adding pathogens beyond SARS-CoV-2/COVID-19, it is important to include the possibility for displaying multiple disease or targets in one dashbaord. Adding additional targets to your data dashboard can be done in several ways. Our example tutorial dashboard does this by adding a `selectInput` dropdown menu for toggling the map and graphs between targets. 
+
+### Example data for additional pathogens
+The example dashboard creates a dummy dataset with two pathogens using the code below.
+
+```{r dummy data, eval = FALSE}
+# Generate random data for the plot examples
+set.seed(25)
+
+county <- c("county 1", "county 2", "county 3")
+county <- sample(county, 26, replace = TRUE)
+site_id <- paste(
+  letters[seq( from = 1, to = 26 )],
+  seq(from = 1, to = 26, by = 1),
+  sep = ""
+)
+state <- c("NY")
+sample_collect_date <- seq.Date(from = (today()-days(25)),
+                                to = today(),
+                                by = 1
+)
+path_1 <- rlnorm(
+  n = 26, meanlog = 0, sdlog = 1
+)
+
+path_2 <- rlnorm(
+  n = 26, meanlog = 0, sdlog = 2
+)
+
+# bind the pcr data together
+data <- as.data.frame(cbind(
+  county,
+  site_id, 
+  state,
+  sample_collect_date,
+  path_1,
+  path_2
+)) %>%
+  mutate(
+    sample_collect_date = as.Date(as.numeric(sample_collect_date),
+                                  origin = "1970-01-01"),
+    path_1 = as.numeric(path_1),
+    path_2 = as.numeric(path_2)
+  ) %>%
+  pivot_longer(
+    cols = c(path_1, path_2)
+  ) %>%
+  rename(concentration = value)
+  
+# add the case data
+path_1 <- sample.int(200, size = 26, replace = TRUE)
+path_2 <- sample.int(100, size = 26, replace = TRUE)
+negatives <- sample.int(300, size = 26, replace = TRUE)
+
+# make it a dataframe
+c_data <- as.data.frame(cbind(
+  sample_collect_date,
+  path_1,
+  path_2,
+  negatives
+))  %>%
+  mutate(
+    sample_collect_date = as.Date(as.numeric(sample_collect_date),
+                                  origin = "1970-01-01"),
+    path_1 = as.numeric(path_1),
+    path_2 = as.numeric(path_2),
+    negatives = as.numeric(negatives)
+  ) %>%
+  pivot_longer(
+    cols = c(path_1, path_2)
+  ) %>%
+  rename(cases = value) %>%
+  mutate(tests = negatives + cases) %>%
+  mutate(positivity = (cases/tests) * 100)
+
+# join to the main data object
+data <- left_join(data, c_data, by = c("sample_collect_date",
+                                       "name")) %>%
+  rename(pathogen = name)
+
+# spatial data for the leaflet map
+ny_sf <- tigris::states(cb = FALSE) %>%
+  filter(NAME == "New York")
+
+# create fields to toggle in the map
+
+# trend - pathogen 1
+ny_sf1 <- ny_sf
+ny_sf1$Trend_factor <- "Increasing"
+
+
+# risk level - pathogen 1
+ny_sf1$Alert_factor <- "Moderate"
+
+
+ny_sf1$pathogen <- "path_1"
+
+# trend - pathogen 2
+ny_sf2 <- ny_sf
+ny_sf2$pathogen <- "path_2"
+ny_sf2$Trend_factor <- "Decreasing"
+
+# risk level - pathogen 2
+ny_sf2$Alert_factor <- "High"
+
+ny_sf_final <- bind_rows(ny_sf1, ny_sf2) %>%
+  add_row(
+    Alert_factor = "Low",
+    Trend_factor = "Stable"
+  )
+
+# make the fields factor variables
+ny_sf_final$Trend_factor <- factor(
+  ny_sf_final$Trend_factor,
+  levels = c("Decreasing",
+             "Stable",
+             "Increasing")
+)
+ny_sf_final$Alert_factor <- factor(
+  ny_sf_final$Alert_factor,
+  levels = c("Low",
+             "Moderate",
+             "High")
+)
+
+```
+
+### Placement of `selectInput`
+The `selectInput` is added to the dashboard sidebar.
+
+![Example placement of dropdown](E:/Dropbox/CEMI/Wastewater/Papers/Dashboard_paper/Figures and Tables/sidebar with pathogen selector.png)
+You can name the options according to each pathogen.
+
+```{r, eval = FALSE}
+# Dropdown for changing between pathogens
+            selectInput(
+              width = 200,
+              inputId = "pathogen_toggle", 
+              label = "Pathogen selection",
+              choices = 
+                c("Pathogen 1" = "path_1", 
+                  "Pathogen 2" = "path_2"),
+              selected = "Pathogen 1"
+            )
+```
+
+### Link the dropdown to the map and graphs
+
+Switching the map and graphs requires a few extra chunks of code.
+
+For switching the maps, you will need to make the spatial data that is mapped reactive using the `reactive` command from RShiny.
+
+```{r, eval = FALSE}
+  # spatial data is reactive according to what pathogen is selected
+  ny_pathogen_filtered <<- reactive({
+    if(input$pathogen_toggle == "path_1"){
+      ny_pathogen_filtered <- ny_sf_final %>%
+        filter(pathogen == "path_1")
+    } else if(input$pathogen_toggle == "path_2"){
+      ny_pathogen_filtered <- ny_sf_final %>%
+        filter(pathogen == "path_2")
+    }
+    return( ny_pathogen_filtered)
+  })
+```
+
+You will then call the reactive object in your leaflet code. Reactive objects are similar to functions and thus need open parentheses after their name. For example, our reactive object will be called using `ny_pathogen_filtered()`.
+
+```{r, eval = FALSE}
+
+proxy_map <- leafletProxy("NYBetaMap") %>%
+    # map panes (order of layers to appear). Higher zIndex = higher layer
+    addMapPane("nymap", zIndex = 420) %>%
+    addMapPane("tiles", zIndex = 400) %>%
+    
+    # basemap tiles
+    addProviderTiles(providers$CartoDB.Voyager,group = "Base map",
+                     options = pathOptions(pane = "tiles")) %>%
+    addPolygons(data = ny_pathogen_filtered(),
+                smoothFactor = 0.2, #
+                fillOpacity = 0.7,
+                # change fill color according to selection
+                fillColor = 
+                  ~wastewater_pal(eval(as.symbol(input$state_map_toggle))),
+                stroke = TRUE,
+                color = "black",
+                weight = 3,
+                options = pathOptions(pane = "nymap",
+                                      clickable = FALSE) # cannot click counties
+    )
+```
+
+Since the spatial object is now a reactive object, we also need to wrap the leafletProxy in an `observe` element to activate the reactive componenet. We will generate the color factors here so they change when the new pathogen is selected.
+
+```{r, eval = FALSE}
+
+  # Leaflet Proxy map for changing color according to trend or alert level
+  observe({
+    
+    # reactive color palettes
+    
+    ##### CHANGE COLOR FACTOR SETS BASED ON USER INPUT FOR WHAT PATTERN TO DISPLAY ####
+    # ALERT LEVEL PATHOGEN 1
+    if (input$pathogen_toggle == "path_1" & input$state_map_toggle == "Alert_factor") {
+      wastewater_pal <- colorFactor(alert_colors,
+                                    levels = alert_levels, ordered = TRUE)
+      # TREND LEVEL PATHOGEN 1
+    } else if (input$pathogen_toggle == "path_1" & input$state_map_toggle == "Trend_factor") {
+      wastewater_pal <- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+      # ALERT LEVEL PATHOGEN 2
+    } else if (input$pathogen_toggle == "path_2" & input$state_map_toggle == "Alert_factor") {
+      wastewater_pal <- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+      # TREND LEVEL PATHOGEN 2
+    } else if (input$pathogen_toggle == "path_2"   & input$state_map_toggle == "Trend_factor") {
+      wastewater_pal <- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+    } 
+    
+    proxy_map <- leafletProxy("NYBetaMap") %>%
+    # map panes (order of layers to appear). Higher zIndex = higher layer
+    addMapPane("nymap", zIndex = 420) %>%
+    addMapPane("tiles", zIndex = 400) %>%
+    
+    # basemap tiles
+    addProviderTiles(providers$CartoDB.Voyager,group = "Base map",
+                     options = pathOptions(pane = "tiles")) %>%
+    addPolygons(data = ny_pathogen_filtered(),
+                smoothFactor = 0.2, #
+                fillOpacity = 0.7,
+                # change fill color according to selection
+                fillColor = 
+                  ~wastewater_pal(eval(as.symbol(input$state_map_toggle))),
+                stroke = TRUE,
+                color = "black",
+                weight = 3,
+                options = pathOptions(pane = "nymap",
+                                      clickable = FALSE) # cannot click counties
+    )
+  })
+
+```
+
+### Additional pathogen graphs
+
+For the graphs, we will also create a reactive object and call the object when we render the plots. You do not need an additional `observe` command for the plot since the `render` functions are already coded for interactivity.
+
+```{r, eval = FALSE}
+# Create reactive data for input into the line and case data graphs
+  plot_data <<- reactive({
+    plot_data <- data %>%
+      filter(pathogen == input$pathogen_toggle)})
+
+  # gene copies plot
+  output$sewershed_plotly_default <- renderPlotly(ggplotly(
+    ggplot(plot_data(),
+           aes(x = sample_collect_date,
+               y = concentration)
+           )+
+      geom_point()+
+      geom_line()+
+      labs(
+        x = "",
+        y = "Concentration",
+        title = paste(head(plot_data()$pathogen, 1))
+      )+
+      theme(plot.title = element_text(hjust = 0.5))
+    
+    )# close ggplotly
+    )# close renderplotly
+```
+## Closing thoughts
 
 This tutorial provides the basic information on how the NY SARS-2 dashboard was designed using R Shiny and Leaflet for R. This tutorial is not exhaustive nor is it meant to replace existing courses or learning materials. It is meant to explain and outline the choices we made when developing our dashboard. Elements, function, and design choices can be adapted by readers for their own dashboards. Further, we recommend the reader review the reference and resource list. There are several helpful package documentations cited including for R [Shiny Dashboard](https://rstudio.github.io/shinydashboard/) and [NY SARS-2 Dashboard](https://rstudio.github.io/leaflet/). We hope this tutorial will help others in their efforts to build and deploy dashboards for public health and other purposes. Full dashboard code is available at the following webpage: ___ and the live dashboard can be reached by visiting: [NY SARS-2 Dashboard](https://mbcolli.shinyapps.io/SARS2EWSP/#). 
 
