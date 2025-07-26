@@ -4145,7 +4145,6 @@ library(shinyBS)
 library(shinyjs)
 library(shinyalert)
 library(shinycssloaders)
-#library(htmlwidgets) # check this one
 library(htmltools) # check this one 
 
 
@@ -4158,9 +4157,6 @@ library(magrittr)
 library(purrr)
 library(stringr)
 library(lubridate)
-#library(tigris) # do we use this still?
-#library(rgdal) # do we still use this one?
-#library(scales) # check this one
 
 # leaflet packages
 library(leaflet)
@@ -4168,20 +4164,141 @@ library(leaflet.extras)
 
 # figure and table creation
 library(ggplot2)
-#library(ggthemes) #check this one
 library(plotly)
 library(gt)
 
-#------------------------------------------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 ### GLOBAL ENVIRONMENT DATA LOADING AND PREPROCESSING PLACE HERE ###
 
 ### REACTIVE DATES ###
-update_date &lt;- lubridate::today(tzone = &#39;America/New_York&#39;) %&gt;% format(&#39;%b %d, %Y&#39;)
-last_sample_date &lt;- today() %&gt;% format(&#39;%b %d, %Y&#39;)
+update_date &lt;- lubridate::today(tzone = &#39;America/New_York&#39;) %&gt;% 
+  format(&#39;%b %d, %Y&#39;)
+last_sample_date &lt;- today() %&gt;% 
+  format(&#39;%b %d, %Y&#39;)
 
-#------------------------------------------------------------------------------------------------------------------------------------------------------
-#------------------------------------------------------------------------------------------------------------------------------------------------------
+# Generate random data for the plot examples
+set.seed(25)
+
+county &lt;- c(&quot;county 1&quot;, &quot;county 2&quot;, &quot;county 3&quot;)
+county &lt;- sample(county, 26, replace = TRUE)
+site_id &lt;- paste(
+  letters[seq( from = 1, to = 26 )],
+  seq(from = 1, to = 26, by = 1),
+  sep = &quot;&quot;
+)
+state &lt;- c(&quot;NY&quot;)
+sample_collect_date &lt;- seq.Date(from = (today()-days(25)),
+                                to = today(),
+                                by = 1
+)
+path_1 &lt;- rlnorm(
+  n = 26, meanlog = 0, sdlog = 1
+)
+
+path_2 &lt;- rlnorm(
+  n = 26, meanlog = 0, sdlog = 2
+)
+
+# bind the pcr data together
+data &lt;- as.data.frame(cbind(
+  county,
+  site_id, 
+  state,
+  sample_collect_date,
+  path_1,
+  path_2
+)) %&gt;%
+  mutate(
+    sample_collect_date = as.Date(as.numeric(sample_collect_date),
+                                  origin = &quot;1970-01-01&quot;),
+    path_1 = as.numeric(path_1),
+    path_2 = as.numeric(path_2)
+  ) %&gt;%
+  pivot_longer(
+    cols = c(path_1, path_2)
+  ) %&gt;%
+  rename(concentration = value)
+  
+# add the case data
+path_1 &lt;- sample.int(200, size = 26, replace = TRUE)
+path_2 &lt;- sample.int(100, size = 26, replace = TRUE)
+negatives &lt;- sample.int(300, size = 26, replace = TRUE)
+
+# make it a dataframe
+c_data &lt;- as.data.frame(cbind(
+  sample_collect_date,
+  path_1,
+  path_2,
+  negatives
+))  %&gt;%
+  mutate(
+    sample_collect_date = as.Date(as.numeric(sample_collect_date),
+                                  origin = &quot;1970-01-01&quot;),
+    path_1 = as.numeric(path_1),
+    path_2 = as.numeric(path_2),
+    negatives = as.numeric(negatives)
+  ) %&gt;%
+  pivot_longer(
+    cols = c(path_1, path_2)
+  ) %&gt;%
+  rename(cases = value) %&gt;%
+  mutate(tests = negatives + cases) %&gt;%
+  mutate(positivity = (cases/tests) * 100)
+
+# join to the main data object
+data &lt;- left_join(data, c_data, by = c(&quot;sample_collect_date&quot;,
+                                       &quot;name&quot;)) %&gt;%
+  rename(pathogen = name)
+
+# spatial data for the leaflet map
+ny_sf &lt;- tigris::states(cb = FALSE) %&gt;%
+  filter(NAME == &quot;New York&quot;)
+
+# create fields to toggle in the map
+
+# trend - pathogen 1
+ny_sf1 &lt;- ny_sf
+ny_sf1$Trend_factor &lt;- &quot;Increasing&quot;
+
+
+# risk level - pathogen 1
+ny_sf1$Alert_factor &lt;- &quot;Moderate&quot;
+
+
+ny_sf1$pathogen &lt;- &quot;path_1&quot;
+
+# trend - pathogen 2
+ny_sf2 &lt;- ny_sf
+ny_sf2$pathogen &lt;- &quot;path_2&quot;
+ny_sf2$Trend_factor &lt;- &quot;Decreasing&quot;
+
+# risk level - pathogen 2
+ny_sf2$Alert_factor &lt;- &quot;High&quot;
+
+ny_sf_final &lt;- bind_rows(ny_sf1, ny_sf2) %&gt;%
+  add_row(
+    Alert_factor = &quot;Low&quot;,
+    Trend_factor = &quot;Stable&quot;
+  )
+
+# make the fields factor variables
+ny_sf_final$Trend_factor &lt;- factor(
+  ny_sf_final$Trend_factor,
+  levels = c(&quot;Decreasing&quot;,
+             &quot;Stable&quot;,
+             &quot;Increasing&quot;)
+)
+ny_sf_final$Alert_factor &lt;- factor(
+  ny_sf_final$Alert_factor,
+  levels = c(&quot;Low&quot;,
+             &quot;Moderate&quot;,
+             &quot;High&quot;)
+)
+
+
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 #############  APP STARTS HERE #######################
 
@@ -4191,59 +4308,93 @@ ui &lt;-
     
     dashboardPage(
       
-      dashboardHeader(title = &quot;Title&quot;, # title in the box at top of the page
-                      titleWidth = 450), # this titlewidth is linked to the sidebar
+      dashboardHeader(
+        title = &quot;Title&quot;, # title in the box at top of the page
+        titleWidth = 450) # this titlewidth is linked to the sidebar
+      , 
       
       # SIDEBAR CONTENT #
-      dashboardSidebar( width = 225,
+      dashboardSidebar( 
+        width = 225,
+        
+        # SIDEBAR MENU #
+        sidebarMenu(
+          id = &quot;sidebarid&quot;,
+          # STYLE ARGUMENT USES CSS CODE
+          # keeps the sidebar content from scrolling
+          style = &quot;position:fixed; width:auto; overflow-x: clip;&quot;, 
+                                    
+          # MENU ITEMS THAT ARE TABS ON THE SIDEBAR
+          menuItem(&quot;State Dashboard&quot;, 
+                   tabName = &quot;dashboard&quot;, 
+                   icon = icon(&quot;dashboard&quot;)), # tabName is called below
+          
+          menuItem(&quot;Resources and toolkit&quot;, 
+                   tabName = &quot;resources&quot;, 
+                   icon = icon(&quot;file-alt&quot;)),
+          
+          menuItem(&quot;Information&quot;, 
+                   icon = icon(&quot;info&quot;), 
+                   tabName = &quot;Information&quot;),
+          
+          ### CONDITIONAL PANEL FOR SIDEBAR BUTTONS ON MAIN DASHBAORD PAGE ###
+          # we add this here so  that the buttons only show up on the dashboard 
+          # page (see condition = below)
+          conditionalPanel(
+            condition = &#39;input.sidebarid == &quot;dashboard&quot;&#39;,
+            
+            # Dropdown for changing between pathogens
+            # Could also be buttons
+            selectInput(
+              width = 200,
+              inputId = &quot;pathogen_toggle&quot;, 
+              label = &quot;Pathogen selection&quot;,
+              choices = 
+                c(&quot;Pathogen 1&quot; = &quot;path_1&quot;, 
+                  &quot;Pathogen 2&quot; = &quot;path_2&quot;),
+              selected = &quot;Pathogen 1&quot;
+            ), # end select input
+            
+            # Dropdown for pathogens tooltip
+            bsTooltip(&quot;pathogen_toggle&quot;, 
+                      &quot;Select disease/target of interest&quot;, 
+            ),
+            
+            # RADIO BUTTONS FOR FIRST PLOT SHOWING TRENDS
+            radioButtons(&quot;ww_trend&quot;, # id for radio button series
+                         &quot;Wastewater trend&quot;, # title of button series
+                         c( # plot 1 is  the intensity, log refers to the ID of 
+                           # the object
+                           &quot;pathogen intensity&quot; = &quot;intensity&quot;,
+                           #plot 2 is the gene copies, gene is the ID of
+                           # the object to display
+                           &quot;Gene copies&quot; = &quot;raw gene copies&quot; 
+                           
+                         ), 
+                         width = 225),
+                                      
+                        # TOOLTIP FOR TREND PLOTS
+                        bsTooltip(&quot;ww_trend&quot;, 
+                                  &quot;Switch between intensity and gene copies &quot;, 
+                                  ),
                         
+                        # RADIO BUTTONS FOR SECOND PLOT SHOWING CASE DATA
+                        radioButtons(&quot;case_switch&quot;, # id for the radio buttons
+                                     &quot;Cases data&quot;, # title of button series
+                                     c(&quot;New cases&quot; = &quot;new_cases&quot;, 
+                                       &quot;Active cases&quot; = &quot;active_cases&quot;,
+                                       &quot;Test positivity&quot; = &quot;positivity&quot;),
+                                     width = 225),
                         
-                        # SIDEBAR MENU #
-                        sidebarMenu(id = &quot;sidebarid&quot;, 
-                                    
-                                    # STYLE ARGUMENT USES CSS CODE
-                                    style = &quot;position:fixed; width:auto; overflow-x: clip;&quot;, # keeps the sidebar content from scrolling
-                                    
-                                    # MENU ITEMS THAT ARE TABS ON THE SIDEBAR
-                                    menuItem(&quot;State Dashboard&quot;, tabName = &quot;dashboard&quot;, icon = icon(&quot;dashboard&quot;)), # tabName is called below in the tab argument
-                                    
-                                    menuItem(&quot;Resources and toolkit&quot;, tabName = &quot;resources&quot;, icon = icon(&quot;file-alt&quot;)),
-                                    
-                                    menuItem(&quot;Information&quot;, icon = icon(&quot;info&quot;), tabName = &quot;Information&quot;),
-                                    
-                                    ### CONDITIONAL PANEL FOR SIDEBAR BUTTONS ON MAIN DASHBAORD PAGE ###
-                                    # we add this here so  that the buttons only show up on the dashboard page (see condition = below)
-                                    conditionalPanel(
-                                      condition = &#39;input.sidebarid == &quot;dashboard&quot;&#39;,
-                                      
-                                      
-                                      # RADIO BUTTONS FOR FIRST PLOT SHOWING TRENDS
-                                      radioButtons(&quot;ww_trend&quot;, # id for radio button series
-                                                   &quot;Wastewater trend&quot;, # title of button series
-                                                   c(&quot;SARS-CoV-2 intensity&quot; = &quot;intensity&quot;, # plot 1 is  the intensity, log refers to the ID of the object
-                                                     &quot;Gene copies&quot; = &quot;raw gene copies&quot; #plot 2 is the gene copies, gene is the ID of  the object to display
-                                                     
-                                                   ), 
-                                                   width = 225),
-                                      
-                                      # TOOLTIP FOR TREND PLOTS
-                                      bsTooltip(&quot;ww_trend&quot;, 
-                                                &quot;Switch between intensity and gene copies &quot;, ),
-                                      
-                                      # RADIO BUTTONS FOR SECOND PLOT SHOWING CASE DATA
-                                      radioButtons(&quot;case_switch&quot;, # id for the radio button series
-                                                   &quot;Cases data&quot;, # title of button series
-                                                   c(&quot;New cases&quot; = &quot;new_cases&quot;, 
-                                                     &quot;Active cases&quot; = &quot;active_cases&quot;,
-                                                     &quot;Test positivity&quot; = &quot;positivity&quot;),
-                                                   width = 225),
-                                      
-                                      # TOOLTIP FOR CASE PLOT
-                                      bsTooltip(&quot;case_switch&quot;, #&quot;county_case_plotly&quot;, 
-                                                &quot;Switch the case plots between new cases, active cases, and positivity.&quot;,
-                                                &quot;bottom&quot;, )
-                                    ) # close conditional panel 
-                        ) # close sidebar menu
+                        # TOOLTIP FOR CASE PLOT
+                        bsTooltip(
+                          &quot;case_switch&quot;, #&quot;county_case_plotly&quot;, 
+                          paste(&quot;Switch the case plots between new cases,&quot;,
+                          &quot; active cases, and positivity.&quot;),
+                          &quot;bottom&quot;, 
+                          )
+                      ) # close conditional panel 
+              ) # close sidebar menu
                         
                         
       ), # close dashboard sidebar argument
@@ -4254,248 +4405,295 @@ ui &lt;-
         
         # CSS style arguments (e.g., font size)
         # increase size of acutal map display based on window
-        tags$style(type = &quot;text/css&quot;, &quot;#NYBetaMap {height: calc(100vh - 80px) !important;}&quot;), # NYBetaMap is the ID of the object to modify
-        tags$head(tags$style(&#39;.selectize-dropdown {z-index: 10000}&#39;)), # this makes the state_map_toggle overlay the leaflet
+        tags$style(
+          type = &quot;text/css&quot;, &quot;#NYBetaMap {height: calc(100vh - 80px) !important;}&quot;
+                   ), # NYBetaMap is the ID of the object to modify
+        tags$head(tags$style(&#39;.selectize-dropdown {z-index: 10000}&#39;)
+                  ), # this makes the state_map_toggle overlay the leaflet
         
         tabItems(
           
-          tabItem(tabName = &quot;dashboard&quot;,
-                  
-                  # web issues box
-                  # update list
-                  #fluidRow(
-                  #  box(width = 12,
-                  #     title = &quot;Note: Browser issues&quot;, background = &quot;red&quot;,
-                  #    &quot;We are aware of issues regarding the dashboard not working as it should in certain browsers (i.e., Google Chrome). We recommend trying
-                  #   a different browser (e.g., Safari, Edge) or clearing the cache on your browser.&quot;
-                  
-                  #) # end update box
-                  
-                  #    ), # end fluid row update box
-                  
-                  # update list
-                  # fluidRow(
-                  #   box(width = 12,
-                  #       title = &quot;Update: August 2022&quot;, background = &quot;green&quot;,
-                  #       p(&quot;New York City data are now available and reported weekly. For more information on methods used for SARS-CoV-2 detection in New York City, please visit&quot;,
-                  #         tags$a(href = &quot;https://doi.org/10.1039/D1EW00747E&quot;,  &quot;this website.&quot;, style = &quot;color: darkblue;&quot;),
-                  #         &quot;For access to New York City historical data, please visit: &quot;,
-                  #         tags$a(href = &quot;https://data.cityofnewyork.us/Health/SARS-CoV-2-concentrations-measured-in-NYC-Wastewat/f7dc-2q9f/data&quot;, &quot;this website.&quot;,
-                  #                style = &quot;color: darkblue;&quot;)
-                  #       )
-                  # 
-                  #   ) # end update box
-                  
-                  #), # end fluid row update box
-                  fluidRow(
-                    column(12, 
-                           h2(&quot;Intro title&quot;),
-                           p(&quot;Optional introductory text&quot;),
-                           br(), # line break between paragraphs
-                    )# end column argument
-                  ), # end fluid row opening paragraph
+          tabItem(
+            tabName = &quot;dashboard&quot;,
+            
+            # web issues box
+            # update list
+            fluidRow(
+              box(width = 12,
+                 title = &quot;Report web issues here&quot;, background = &quot;red&quot;,
+                &quot;This is an example box to post updates.&quot;
 
-                  #  VALUE BOXES WITH STATE SUMMARIES  #
-                  fluidRow(column(width = 12, h2(HTML(paste(&quot;Statewide participation summary&quot;, &quot;&lt;sup&gt;&quot;, &quot;1&quot;, &quot;&lt;/sup&gt;&quot;))))),
-                  
-                  fluidRow(
-                    # number of counties actively reporting
-                    valueBox( value = 1000,
-                              subtitle = &quot;Participating counties&quot;,
-                              color = &quot;light-blue&quot;,
-                              icon = icon(&quot;map&quot;)
-                    ),
-                    # number of  treatment plants reporting
-                    valueBox( value = 100,
-                              #subtitle = &quot;Participating WWTPs&quot;,
-                              subtitle = &quot;Participating WWTPs&quot;,
-                              color = &quot;aqua&quot;,
-                              icon = icon(&quot;water&quot;)
-                    ),
-                    # population covered
-                    valueBox( value = formatC(14500000, format=&quot;d&quot;, big.mark=&quot;,&quot;),
-                              subtitle = &quot;Population covered&quot;,
-                              color = &quot;blue&quot;,
-                              icon = icon(&quot;users&quot;))
-                  ), # end fluid row summary boxes
-                  fluidRow(column(width = 12, p(HTML(paste(&quot;&lt;sup&gt;&quot;, &quot;1&quot;, &quot;&lt;/sup&gt;&quot;, &quot;Participation as of &quot;, lubridate::today(tzone = &#39;America/New_York&#39;) %&gt;% format(&#39;%b %d, %Y&#39;)))))),
-                  
-                  # UPDATE INFORMATION ROW
-                  fluidRow(column(12,
-                                  titlePanel(h3(paste(&quot;Last Updated: &quot;, update_date, sep = &quot;&quot;))),
-                                  titlePanel(h3(paste(&quot;Most recent sample: &quot;, last_sample_date, sep = &quot;&quot;)))
+            ) # end update box
+
+                ), # end fluid row update box
+            
+            # update list
+             fluidRow(
+               box(width = 12,
+                   title = &quot;Update box&quot;, background = &quot;green&quot;,
+                   p(&quot;This dashboard is meant for educational purposes only and 
+                     does not represent any actual data.&quot;)
+                   
+            
+               ) # end update box
+
+            ), # end fluid row update box
+            fluidRow(
+              column(12, 
+                     h2(&quot;Intro title&quot;),
+                     p(&quot;Optional introductory text&quot;),
+                     br(), # line break between paragraphs
+              )# end column argument
+            ), # end fluid row opening paragraph
+            
+            #  VALUE BOXES WITH STATE SUMMARIES  #
+            fluidRow(
+              column(
+                width = 12, 
+                h2(HTML(paste(&quot;Statewide participation summary&quot;, 
+                              &quot;&lt;sup&gt;&quot;, 
+                              &quot;1&quot;, 
+                              &quot;&lt;/sup&gt;&quot;))))
+              ), # close fluid row
+            
+            fluidRow(
+              # number of counties actively reporting
+              valueBox( value = 1000,
+                        subtitle = &quot;Participating counties&quot;,
+                        color = &quot;light-blue&quot;,
+                        icon = icon(&quot;map&quot;)
+              ),
+              # number of  treatment plants reporting
+              valueBox( value = 100,
+                        #subtitle = &quot;Participating WWTPs&quot;,
+                        subtitle = &quot;Participating WWTPs&quot;,
+                        color = &quot;aqua&quot;,
+                        icon = icon(&quot;water&quot;)
+              ),
+              # population covered
+              valueBox( value = formatC(14500000, format=&quot;d&quot;, 
+                                        big.mark=&quot;,&quot;),
+                        subtitle = &quot;Population covered&quot;,
+                        color = &quot;blue&quot;,
+                        icon = icon(&quot;users&quot;))
+            ), # end fluid row summary boxes
+            
+            fluidRow(
+              column(
+                width = 12, 
+                p(HTML(paste(&quot;&lt;sup&gt;&quot;, &quot;1&quot;, &quot;&lt;/sup&gt;&quot;, 
+                             &quot;Participation as of &quot;, 
+                             lubridate::today(tzone = &#39;America/New_York&#39;) 
+                             %&gt;% format(&#39;%b %d, %Y&#39;)))))
+              ), # close fluid row
+            
+            # UPDATE INFORMATION ROW
+            fluidRow(
+              column(
+                12,
+                titlePanel(h3(paste(&quot;Last Updated: &quot;, 
+                                    update_date, sep = &quot;&quot;))),
+                titlePanel(h3(paste(&quot;Most recent sample: &quot;, 
+                                    last_sample_date, sep = &quot;&quot;)))
+            )
+            
+            ), # end fluid row
+            
+            br(),
+            
+            # MAIN DASHBOARD MAP (ID = NYBetaMap)
+            fluidRow(
+              box(width = 12, id = &quot;map_container&quot;,
+                 title = &quot;Map of participating treatment plants and counties&quot;,
+                 column(
+                  width = 8,
+                  # withspinner adds loading icon
+                  withSpinner(
+                    leafletOutput(&#39;NYBetaMap&#39;), 
+                    type = 8), # type of loading icon to show
+                  fluidRow(# create action button to show or hide description
+                    actionButton(inputId = &quot;button_map&quot;, 
+                                 label = &quot;Map description show / hide&quot;, 
+                                 width = 250)
+                  ) # close fluid row
+                 ), # close column
+                         
+                 # RIGHT OF MAP SIDEBAR #
+                 column(width = 4, 
+                        # MAIN MAP TOGGLE SELECTIONS AND BUTTONS
+                        fluidRow(
+                          selectInput(
+                             inputId = &quot;state_map_toggle&quot;, 
+                             label = &quot;Wastewater Metric&quot;,
+                             choices = 
+                               c(&quot;pathogen detection level&quot; = &quot;Alert_factor&quot;, 
+                                         &quot;Two week trend&quot; = &quot;Trend_factor&quot;),
+                             selected = &quot;pathogen detection level&quot;
+                        )# end select input
+                        
+                        ), # close fluid row
+                        
+                        # CATEGORY CHANGE TABLES
+                        fluidRow(
+                          wellPanel(
+                           id = &quot;category_tables&quot;,
+                           conditionalPanel(
+                             condition = &quot;input.state_map_toggle == &#39;Alert_factor&#39;&quot;,
+                             gt_output(&quot;alert_table&quot;)
+                           ), # close conditional panel
+                           conditionalPanel(
+                             condition = &quot;input.state_map_toggle == &#39;Trend_factor&#39;&quot;,
+                             gt_output(&quot;trend_table&quot;)
+                                   ) # close conditional panel
+                        ) # close well panel
+                        ), # close fluid row
+                        
+                        # CATEGORY CHANGE DESCRIPTION 
+                        fluidRow(wellPanel(
+                          conditionalPanel(
+                            condition = &quot;input.state_map_toggle == &#39;Alert_factor&#39;&quot;,
+                            box(width = 12, title = &quot;Pathogen detection level&quot;,
+                                p(&quot;Paste text here&quot;))
+                          ), # close conditional panel
+                          conditionalPanel(
+                            condition = &quot;input.state_map_toggle == &#39;Trend_factor&#39;&quot;,
+                            box(width = 12, title = &quot;Two-week trend&quot;, 
+                                p(&quot;paste text here&quot;)
+                                           ) # close box
+                          )# close conditional panel
+                        )# close well panel
+                        ) # close fluid row
+                 ) # close column
+                         
+            ), #close map box
+            
+            ), # end map fluidrow
+            
+            # new tooltip to try
+            # NYBetaMap TOOLTIP #
+            bsTooltip(&quot;NYBetaMap&quot;, 
+                      paste(&quot;Zoom in or click a county to see sewersheds.&quot;,
+                      &quot; Click a marker or catchment to see wastewater trends &quot;,
+                      &quot;(displayed below).&quot;),
+                      trigger = &quot;hover&quot;,
+                      &quot;bottom&quot;, ),
+            
+            # map container second TOOLTIP #
+            bsTooltip(&quot;map_container&quot;, 
+                      paste(&quot;Zoom in or click a county to see sewersheds.&quot;,
+                      &quot; Click a marker or catchment to see wastewater trends &quot;,
+                      &quot;(displayed below).&quot;),
+                      trigger = &quot;hover&quot;,
+                      &quot;top&quot;, ),
+            
+            br(),
+            
+            # NYBetaMap DESCRIPTION (observe event is in the server)
+            hidden(div(id = &quot;maptext_wrapper&quot;,
+                       box(id = &quot;mapText&quot;, title = &quot;Map description&quot;, width = 12,
+                           h4(&quot;Header&quot;),
+                           # disclaimer on state of the science
+                           p(&quot;optional description text&quot;)
+                       ) # end box
+            )# end div
+            ), # end hidden,
+            
+            # WASTEWATER TREND PLOTS 
+            # created in a well panel and conditional panel linked to the radio
+            # buttons above
+            br(),
+            fluidRow(
+              box(width = 12, title = &quot;Wastewater trend&quot;,
+                  wellPanel(id = &quot;sewershed_plots&quot;, 
+                            conditionalPanel(
+                              condition = &quot;input.ww_trend == &#39;intensity&#39;&quot;,
+                              withSpinner(
+                                plotlyOutput(&quot;sewershed_plotly_default_log&quot;), 
+                                type = 8) # add loading icon
+                            ),
+                            conditionalPanel(
+                              condition = &quot;input.ww_trend == &#39;raw gene copies&#39;&quot;,
+                              withSpinner(plotlyOutput(&quot;sewershed_plotly_default&quot;),
+                                          type = 8) # add loading icon
+                            )
+                  ),# end well panel
+                  column(12, actionButton(
+                    inputId = &quot;button_trendText&quot;, 
+                    label = &quot;Trend graph description show / hide&quot;, 
+                    width = 250)
+                  )# end  column
+              )# end box
+            ), # end fluidrow
+            
+            bsTooltip(&quot;sewershed_plots&quot;, #&quot;sewershed_plotly_default&quot;, 
+                      paste(&quot;This plot shows the trend values for pathogen &quot;,
+                      &quot;detected in wastewater at the selected treatment plant.&quot;),
+                      &quot;bottom&quot;, ),
+            
+            # sewershed trend plot description 
+            
+            hidden(
+              div(id = &quot;trendPlotText_wrapper&quot;,
+                  box(id = &quot;trendPlotText&quot;, 
+                      title = &quot;Wastewater trend description&quot;, 
+                      width = 12,
+                      h4(&quot;Header&quot;),
+                      p(&quot;optional text&quot;)
+                  ) # end box
+              )# end div
+            ), # end hidden
+            br(),
+            #fluidRow(
+            # box(width = 12,
+            # plotlyOutput(&quot;county_case_plotly&quot;))
+            #),
+            fluidRow(
+              box(width = 12, title = &quot;Case data&quot;,
+                  wellPanel(id = &quot;case_plots&quot;, conditionalPanel(
+                    condition = &quot;input.case_switch == &#39;new_cases&#39;&quot;,
+                    withSpinner(plotlyOutput(&quot;county_case_plotly&quot;), 
+                                type = 8) # add loading icon
+                  ),
+                  conditionalPanel(
+                    condition = &quot;input.case_switch == &#39;active_cases&#39;&quot;,
+                    withSpinner(plotlyOutput(&quot;county_active_plotly&quot;), 
+                                type = 8) # add loading icon
+                  ),
+                  conditionalPanel(
+                    condition = &quot;input.case_switch == &#39;positivity&#39;&quot;,
+                    withSpinner(plotlyOutput(&quot;county_positivity_plotly&quot;), 
+                                type = 8) # add loading icon
                   )
-                  
-                  ), # end fluid row
-                  br(),
-                  
-                  # MAIN DASHBOARD MAP (ID = NYBetaMap)
-                  fluidRow(box(width = 12, id = &quot;map_container&quot;,
-                               title = &quot;Map of participating treatment plants and counties&quot;,
-                               column(width = 8,
-                                      # withspinner adds loading icon
-                                      withSpinner(
-                                        leafletOutput(&#39;NYBetaMap&#39;), 
-                                        type = 8), # type of loading icon to show
-                                      fluidRow(# create action button to show or hide description
-                                        actionButton(inputId = &quot;button_map&quot;, label = &quot;Map description show / hide&quot;, width = 250)
-                                      ) # close fluid row
-                               ), # close column
-                               
-                               # RIGHT OF MAP SIDEBAR #
-                               column(width = 4, 
-                                      # MAIN MAP TOGGLE SELECTIONS AND BUTTONS
-                                      fluidRow(selectInput(inputId = &quot;state_map_toggle&quot;, label = &quot;Wastewater Metric&quot;,
-                                                           choices = c(&quot;SARS-CoV-2 detection level&quot; = &quot;Alert_factor&quot;, 
-                                                                       &quot;Two week trend&quot; = &quot;Trend_factor&quot;),
-                                                           selected = &quot;SARS-CoV-2 detection level&quot;
-                                      )# end select input
-                                      ), # close fluid row
-                                      # CATEGORY CHANGE TABLES
-                                      fluidRow(wellPanel(id = &quot;category_tables&quot;,
-                                                         conditionalPanel(condition = &quot;input.state_map_toggle == &#39;Alert_factor&#39;&quot;,
-                                                                          gt_output(&quot;alert_table&quot;)
-                                                         ), # close conditional panel
-                                                         conditionalPanel(condition = &quot;input.state_map_toggle == &#39;Trend_factor&#39;&quot;,
-                                                                          gt_output(&quot;trend_table&quot;)
-                                                         ) # close conditional panel
-                                      ) # close well panel
-                                      ), # close fluid row
-                                      
-                                      # CATEGORY CHANGE DESCRIPTION 
-                                      fluidRow(wellPanel(
-                                        conditionalPanel(condition = &quot;input.state_map_toggle == &#39;Alert_factor&#39;&quot;,
-                                                         box(width = 12, title = &quot;SARS-CoV-2 detection level&quot;,
-                                                             p(&quot;SARS-CoV-2 detection level is displayed in three categories: Low, Moderate, and Substantial to High.
-                                                    Current estimated levels are based on the highest detection reported from the most recent three samples. These detection levels have
-                                                    been shown to correlate with estimated community transmission levels. Category change in the last 15 days is calculated by subtracting 
-                                                    the current number of sites in each current level category from the number of sites in the same category 15 days earlier and dividing by 
-                                                    the number of sites in the same category 15 days earlier.
-                                                      See the Map description for more detailed information.&quot;))
-                                        ), # close conditional panel
-                                        conditionalPanel(condition = &quot;input.state_map_toggle == &#39;Trend_factor&#39;&quot;,
-                                                         box(width = 12, title = &quot;Two-week trend&quot;, 
-                                                             p(&quot;To identify how wastewater results are changing over time, trend analysis is conducted on the most recent data. A two-week trend is 
-                                                    calculated for each location using all data points within the fifteen previous days of the most recent sample for that location. 
-                                                    The trend analysis calculates the average change in the SARS-CoV-2 Intensity over the fifteen-day period using a linear 
-                                                    regression. Sites with fewer than two samples within the fifteen-day window appear as NA values. Category change in the last 15 days is 
-                                                    calculated by subtracting the current number of sites in each current level category from the number of sites in the same category 15 
-                                                    days earlier and dividing by the number of sites in the same category 15 days earlier.
-                                                    See the Map description for more
-                                                    detailed information.&quot;)
-                                                         ) # close box
-                                        )# close conditional panel
-                                      )# close well panel
-                                      ) # close fluid row
-                               ) # close column
-
-                  ), #close map box
-
-                  ), # end map fluidrow
-
-                  # new tooltip to try
-                  # NYBetaMap TOOLTIP #
-                  bsTooltip(&quot;NYBetaMap&quot;, 
-                            &quot;Zoom in or click a county to see sewersheds. Click a marker or catchment to see wastewater trends (displayed below).&quot;,
-                            trigger = &quot;hover&quot;,
-                            &quot;bottom&quot;, ),
-                  
-                  # map container second TOOLTIP #
-                  bsTooltip(&quot;map_container&quot;, 
-                            &quot;Zoom in or click a county to see sewersheds. Click a marker or catchment to see wastewater trends (displayed below).&quot;,
-                            trigger = &quot;hover&quot;,
-                            &quot;top&quot;, ),
-                  
-                  br(),
-                  
-                  # NYBetaMap DESCRIPTION (observe event is in the server)
-                  hidden(div(id = &quot;maptext_wrapper&quot;,
-                             box(id = &quot;mapText&quot;, title = &quot;Map description&quot;, width = 12,
-                                 h4(&quot;Header&quot;),
-                                 # disclaimer on state of the science
-                                 p(&quot;optional description text&quot;)
-                             ) # end box
-                  )# end div
-                  ), # end hidden,
-                  
-                  # WASTEWATER TREND PLOTS 
-                  # created in a well panel and conditional panel linked to the radio buttons above
-                  br(),
-                  fluidRow(
-                    box(width = 12, title = &quot;Wastewater trend&quot;,
-                        wellPanel(id = &quot;sewershed_plots&quot;, 
-                                  conditionalPanel(
-                                    condition = &quot;input.ww_trend == &#39;intensity&#39;&quot;,
-                                    withSpinner(plotlyOutput(&quot;sewershed_plotly_default_log&quot;), type = 8) # add loading icon
-                                  ),
-                                  conditionalPanel(
-                                    condition = &quot;input.ww_trend == &#39;raw gene copies&#39;&quot;,
-                                    withSpinner(plotlyOutput(&quot;sewershed_plotly_default&quot;), type = 8) # add loading icon
-                                  )
-                        ),# end well panel
-                        column(12, actionButton(inputId = &quot;button_trendText&quot;, label = &quot;Trend graph description show / hide&quot;, width = 250)
-                        )# end  column
-                    )# end box
-                  ), # end fluidrow
-
-                  bsTooltip(&quot;sewershed_plots&quot;, #&quot;sewershed_plotly_default&quot;, 
-                            &quot;This plot shows the trend values for SARS CoV-2 detected in wastewater at the selected treatment plant.&quot;,
-                            &quot;bottom&quot;, ),
-                  
-                  # sewershed trend plot description 
-                  
-                  hidden(
-                    div(id = &quot;trendPlotText_wrapper&quot;,
-                        box(id = &quot;trendPlotText&quot;, title = &quot;Wastewater trend description&quot;, width = 12,
-                            h4(&quot;Header&quot;),
-                            p(&quot;optional text&quot;)
-                        ) # end box
-                    )# end div
-                  ), # end hidden
-                   br(),
-                  #fluidRow(
-                  # box(width = 12,
-                  # plotlyOutput(&quot;county_case_plotly&quot;))
-                   #),
-                  fluidRow(
-                    box(width = 12, title = &quot;Case data&quot;,
-                        wellPanel(id = &quot;case_plots&quot;, conditionalPanel(
-                          condition = &quot;input.case_switch == &#39;new_cases&#39;&quot;,
-                          withSpinner(plotlyOutput(&quot;county_case_plotly&quot;), type = 8) # add loading icon
-                        ),
-                        conditionalPanel(
-                          condition = &quot;input.case_switch == &#39;active_cases&#39;&quot;,
-                          withSpinner(plotlyOutput(&quot;county_active_plotly&quot;), type = 8) # add loading icon
-                        ),
-                        conditionalPanel(
-                          condition = &quot;input.case_switch == &#39;positivity&#39;&quot;,
-                          withSpinner(plotlyOutput(&quot;county_positivity_plotly&quot;), type = 8) # add loading icon
-                        )
-                        ), 
-                        column(12, actionButton(inputId = &quot;caseText_button&quot;, label = &quot;Case plot description show / hide&quot;, width = 250))
-                    )# end box
-                  ), # end fluid row
-                  
-                  # case plot tooltip
-                  bsTooltip(&quot;case_plots&quot;, #&quot;county_case_plotly&quot;, 
-                            &quot;This plot shows the total positive test results for the county.&quot;,
-                            &quot;bottom&quot;, ),
-                  
-                  # case plot description popup
-                  
-                  hidden(
-                    div(id = &quot;caseText_wrapper&quot;,
-                        box(id = &quot;caseText&quot;, title = &quot;Case plot description&quot;, width = 12,
-                            h4(&quot;Header&quot;),
-                            p(&quot;optional text&quot;)
-                        ) # end box
-                    )# end div
-                  )# end hidden
-
-                  
-                  ###############
-                  
-                  
+                  ), 
+                  column(12, actionButton(
+                    inputId = &quot;caseText_button&quot;, 
+                    label = &quot;Case plot description show / hide&quot;, 
+                    width = 250))
+              )# end box
+            ), # end fluid row
+            
+            # case plot tooltip
+            bsTooltip(
+              &quot;case_plots&quot;, #&quot;county_case_plotly&quot;, 
+              &quot;This plot shows the total positive test results for the county.&quot;,
+              &quot;bottom&quot;, ),
+            
+            # case plot description popup
+            
+            hidden(
+              div(id = &quot;caseText_wrapper&quot;,
+                  box(id = &quot;caseText&quot;, title = &quot;Case plot description&quot;, 
+                      width = 12,
+                      h4(&quot;Header&quot;),
+                      p(&quot;optional text&quot;)
+                  ) # end box
+              )# end div
+            )# end hidden
+            
+            
+            ###############
+            
+            
           ),
           tabItem(tabName = &quot;resources&quot;,
                   fluidRow(
@@ -4530,17 +4728,62 @@ server &lt;- function(input, output, session) {
     Sys.time()
   })
   
+  # Color palettes for leaflet map
+  # create color level and value vectors for each factor variable
+  trend_colors &lt;- c(&quot;dodgerblue3&quot;, &quot;papayawhip&quot;, &quot;orangered&quot;)
+  trend_levels &lt;- c(&quot;Decreasing&quot;, &quot;Stable&quot;, &quot;Increasing&quot;)
+  alert_colors &lt;- c(&quot;steelblue4&quot;, &quot;#b4cbf0&quot;, &quot;#fac898&quot;)
+  alert_levels &lt;- c(&quot;Low&quot;, &quot;Moderate&quot;, &quot;High&quot;)
+  
+  # Map legends
+  output$alert_table &lt;- render_gt(
+    as.data.frame(rbind(
+                       &quot;Low&quot;,
+                       &quot;Moderate&quot;,
+                       &quot;High&quot;)) %&gt;%
+      rename(&quot;Detection level&quot; = V1) %&gt;%
+      gt() %&gt;%
+      data_color(
+        columns = &quot;Detection level&quot;,
+        colors = scales::col_factor(alert_colors,
+                                    levels = alert_levels, ordered = TRUE)
+      )
+  )
+  output$trend_table &lt;- render_gt(
+    as.data.frame(rbind(
+                       &quot;Decreasing&quot;,
+                       &quot;Stable&quot;,
+                       &quot;Increasing&quot;))%&gt;%
+      rename(&quot;Trend&quot; = V1) %&gt;%
+      gt() %&gt;%
+      data_color(
+        columns = &quot;Trend&quot;,
+        colors = scales::col_factor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+      )
+  )
+  
   ###### LEAFLET MAP #######
-
+  
   # create map for renders
   nybetamap_preset &lt;- leaflet() %&gt;% 
+    # map panes (order of layers to appear). Higher zIndex = higher layer
+    addMapPane(&quot;nymap&quot;, zIndex = 420) %&gt;%
     addMapPane(&quot;tiles&quot;, zIndex = 400) %&gt;%
-    addProviderTiles(providers$Stamen.TonerLite, group = &quot;Base map&quot;,
-                     options = c(pathOptions(pane = &quot;tiles&quot;))) %&gt;%
-    addProviderTiles(providers$Stamen.TonerLines, group = &quot;Base map&quot;,
-                     options = c(providerTileOptions(opacity = 0.35), pathOptions(pane = &quot;tiles&quot;)))%&gt;%
-    addProviderTiles(providers$Stamen.TonerLabels,group = &quot;Base map&quot;,
-                     options = pathOptions(pane = &quot;tiles&quot;))
+    
+    # basemap tiles
+    addProviderTiles(providers$CartoDB.Voyager,group = &quot;Base map&quot;,
+                     options = pathOptions(pane = &quot;tiles&quot;)) %&gt;%
+    addPolygons(data = ny_sf,
+                smoothFactor = 0.2, #fillOpacity = 0.7,
+                fillColor = &quot;white&quot;,
+                stroke = TRUE,
+                color = &quot;black&quot;,
+                weight = 3,
+                options = pathOptions(pane = &quot;nymap&quot;,
+                                      clickable = FALSE) # cannot click counties
+    )
   
   ##### PRESET STATE MAP FOR STATE MAP VIEW BUTTON #####
   # render output
@@ -4555,15 +4798,118 @@ server &lt;- function(input, output, session) {
     
   })
   
-  # sample ggplot for the first plot
-  default_ww_plot &lt;-ggplotly(ggplot(mpg, aes(displ, hwy, colour = class)) + 
-    geom_point())
-  output$sewershed_plotly_default &lt;- renderPlotly(default_ww_plot)
+  # spatial data is reactive according to what pathogen is selected
+  ny_pathogen_filtered &lt;&lt;- reactive({
+    if(input$pathogen_toggle == &quot;path_1&quot;){
+      ny_pathogen_filtered &lt;- ny_sf_final %&gt;%
+        filter(pathogen == &quot;path_1&quot;)
+    } else if(input$pathogen_toggle == &quot;path_2&quot;){
+      ny_pathogen_filtered &lt;- ny_sf_final %&gt;%
+        filter(pathogen == &quot;path_2&quot;)
+    }
+    return( ny_pathogen_filtered)
+  })
+  
+  # Leaflet Proxy map for changing color according to trend or alert level
+  observe({
+    
+    # reactive color palettes
+    
+    ##### CHANGE COLOR FACTOR SETS BASED ON USER INPUT FOR WHAT PATTERN TO DISPLAY ####
+    # ALERT LEVEL PATHOGEN 1
+    if (input$pathogen_toggle == &quot;path_1&quot; &amp; input$state_map_toggle == &quot;Alert_factor&quot;) {
+      wastewater_pal &lt;- colorFactor(alert_colors,
+                                    levels = alert_levels, ordered = TRUE)
+      # TREND LEVEL PATHOGEN 1
+    } else if (input$pathogen_toggle == &quot;path_1&quot; &amp; input$state_map_toggle == &quot;Trend_factor&quot;) {
+      wastewater_pal &lt;- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+      # ALERT LEVEL PATHOGEN 2
+    } else if (input$pathogen_toggle == &quot;path_2&quot; &amp; input$state_map_toggle == &quot;Alert_factor&quot;) {
+      wastewater_pal &lt;- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+      # TREND LEVEL PATHOGEN 2
+    } else if (input$pathogen_toggle == &quot;path_2&quot;   &amp; input$state_map_toggle == &quot;Trend_factor&quot;) {
+      wastewater_pal &lt;- colorFactor(trend_colors,
+                                    levels = trend_levels,
+                                    ordered = TRUE)
+    } 
+    
+    proxy_map &lt;- leafletProxy(&quot;NYBetaMap&quot;) %&gt;%
+    # map panes (order of layers to appear). Higher zIndex = higher layer
+    addMapPane(&quot;nymap&quot;, zIndex = 420) %&gt;%
+    addMapPane(&quot;tiles&quot;, zIndex = 400) %&gt;%
+    
+    # basemap tiles
+    addProviderTiles(providers$CartoDB.Voyager,group = &quot;Base map&quot;,
+                     options = pathOptions(pane = &quot;tiles&quot;)) %&gt;%
+    addPolygons(data = ny_pathogen_filtered(),
+                smoothFactor = 0.2, #
+                fillOpacity = 0.7,
+                # change fill color according to selection
+                fillColor = 
+                  ~wastewater_pal(eval(as.symbol(input$state_map_toggle))),
+                stroke = TRUE,
+                color = &quot;black&quot;,
+                weight = 3,
+                options = pathOptions(pane = &quot;nymap&quot;,
+                                      clickable = FALSE) # cannot click counties
+    )
+  })
+  
+  # ---------------------------------------------------------------------------
+  
+  # Plots for trends and case data
+  
+  # Create reactive data for input into the line and case data graphs
+  plot_data &lt;&lt;- reactive({
+    plot_data &lt;- data %&gt;%
+      filter(pathogen == input$pathogen_toggle)})
+
+  # gene copies plot
+  output$sewershed_plotly_default &lt;- renderPlotly(ggplotly(
+    ggplot(plot_data(),
+           aes(x = sample_collect_date,
+               y = concentration)
+           )+
+      geom_point()+
+      geom_line()+
+      labs(
+        x = &quot;&quot;,
+        y = &quot;Concentration&quot;,
+        title = paste(head(plot_data()$pathogen, 1))
+      )+
+      theme(plot.title = element_text(hjust = 0.5))
+    
+    )# close ggplotly
+    )# close renderplotly
+
+
   
   # sample ggplot for the second plot behind the wellpanel
-  default_ww_plot_log &lt;-ggplotly(ggplot(mpg, aes(displ, hwy, colour = class)) + 
-    geom_line())
-  output$sewershed_plotly_default_log &lt;- renderPlotly(default_ww_plot_log)
+  # In our example, this displays the log transformed data with smoothed trend
+  output$sewershed_plotly_default_log &lt;- renderPlotly(ggplotly(
+    ggplot(plot_data(),
+           aes(x = sample_collect_date,
+               y = log1p(concentration))
+    )+
+      geom_point()+
+      geom_line()+
+      labs(
+        x = &quot;&quot;,
+        y = &quot;log(Concentration)&quot;,
+        title = paste(head(plot_data()$pathogen, 1),
+                       &quot;Log transformed&quot;,
+                      sep = &quot; &quot;)
+      )+
+      theme(plot.title = element_text(hjust = 0.5))+
+      geom_smooth(method = &quot;loess&quot;,
+                  span = 0.25)
+    
+  )# close ggplotly
+  )# close renderplotly
   
   # button press to display description of plot
   observeEvent(input$button_trendText, {
@@ -4571,18 +4917,67 @@ server &lt;- function(input, output, session) {
     
   })
   
-  # barplot
-  case_plotly &lt;- ggplotly(ggplot(mpg, aes(displ, hwy, fill = class)) + 
-                            geom_bar(position = &quot;stack&quot;, stat= &quot;identity&quot;))
-  output$county_case_plotly &lt;- renderPlotly(case_plotly)
+  # barplots for case or other count data
+  output$county_case_plotly &lt;- renderPlotly(
+    ggplotly(
+      ggplot(plot_data(),
+             aes(x = sample_collect_date,
+                 y = cases)
+      )+
+        geom_bar(position = &quot;dodge&quot;,
+                 stat = &quot;identity&quot;)+
+        labs(
+          x = &quot;&quot;,
+          y = &quot;Cases&quot;,
+          title = paste(head(plot_data()$pathogen, 1),
+                        &quot;Case Counts&quot;,
+                        sep = &quot; &quot;)
+        )+
+        theme(plot.title = element_text(hjust = 0.5))
+    )
+  )
+
+  # second case plots. this could be active cases based on a serial interval of
+  # infection or something similar. Here we are simply log transforming them
+  output$county_active_plotly &lt;- renderPlotly(
+    ggplotly(
+      ggplot(plot_data(),
+             aes(x = sample_collect_date,
+                 y = log(cases))
+      )+
+        geom_bar(position = &quot;dodge&quot;,
+                 stat = &quot;identity&quot;)+
+        labs(
+          x = &quot;&quot;,
+          y = &quot;Cases&quot;,
+          title = paste(head(plot_data()$pathogen, 1),
+                        &quot;Case Counts - log transformed&quot;,
+                        sep = &quot; &quot;)
+        )+
+        theme(plot.title = element_text(hjust = 0.5))
+    )
+  )
   
-  active_plotly &lt;- ggplotly(ggplot(mpg, aes(displ, year, fill = class)) + 
-                              geom_bar(position = &quot;stack&quot;, stat= &quot;identity&quot;))
-  output$county_active_plotly &lt;- renderPlotly(active_plotly)
-  
-  positivity_plotly &lt;-  ggplotly(ggplot(mpg, aes(displ, trans, fill = class)) + 
-                                   geom_bar(position = &quot;stack&quot;, stat= &quot;identity&quot;))
-  output$county_positivity_plotly &lt;- renderPlotly(positivity_plotly)
+
+  # Test positivity plot (total positive cases / total tests)
+  output$county_positivity_plotly &lt;- renderPlotly(
+    ggplotly(
+      ggplot(plot_data(),
+             aes(x = sample_collect_date,
+                 y = positivity)
+      )+
+        geom_bar(position = &quot;dodge&quot;,
+                 stat = &quot;identity&quot;)+
+        labs(
+          x = &quot;&quot;,
+          y = &quot;Test positivity (percent)&quot;,
+          title = paste(head(plot_data()$pathogen, 1),
+                        &quot;Test positivity&quot;,
+                        sep = &quot; &quot;)
+        )+
+        theme(plot.title = element_text(hjust = 0.5))
+    )
+  )
   
   
   # button press to display description of case plot
